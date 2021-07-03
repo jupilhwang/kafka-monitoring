@@ -1,0 +1,78 @@
+version: '3.7'
+services:
+
+  # 직접 설치로 대체
+  #node:
+  #  image: prom/node-exporter
+  #  container_name: node-exporter
+  #  ports:
+  #    - 9101:9100
+  #  networks:
+  #    - prometheus-network
+
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    #network_mode: "host" 
+    command:
+      - '--web.listen-address=0.0.0.0:9090'
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./prometheus/etc:/etc/prometheus
+      - prometheus-data:/prometheus
+    ports:
+      - 9090:9090
+    networks: 
+      - prometheus-network
+
+  grafana:
+    container_name: grafana
+    image: grafana/grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource,grafana-piechart-panel
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana:/etc/grafana/provisioning
+    ports:
+      - 3000:3000
+    depends_on: 
+      - prometheus
+    networks: 
+      - prometheus-network
+
+networks:
+  prometheus-network:
+
+volumes:
+  prometheus-data:
+    driver: local
+    driver_opts:
+      type: "none"
+      o: "bind" 
+      device: "/opt/monitoring/prometheus/data/"
+  #prometheus-config:
+  #  driver: local
+  #  driver_opts:
+  #    type: "none"
+  #    o: "bind" 
+  #    device: "/opt/monitoring/prometheus/etc"
+  grafana-data:
+    driver: local
+    driver_opts:
+      type: "none"
+      o: "bind" 
+      device: "/opt/monitoring/grafana/data/"
+  #grafana-config:
+  #  driver: local
+  #  driver_opts:
+  #    type: "none"
+  #    o: "bind" 
+  #    device: "/opt/monitoring/grafana/provisioning/"
