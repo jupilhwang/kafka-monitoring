@@ -4,6 +4,7 @@ services:
   prometheus:
     image: prom/prometheus
     container_name: prometheus
+    restart: always
     #network_mode: "host" 
     command:
       - '--web.listen-address=0.0.0.0:9090'
@@ -24,6 +25,7 @@ services:
   grafana:
     container_name: grafana
     image: grafana/grafana
+    restart: always
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
