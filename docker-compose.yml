@@ -41,6 +41,20 @@ services:
     networks: 
       - prometheus-network
 
+  kafka-lag-exporter:
+    image: lightbend/kafka-lag-exporter:0.6.7
+    container_name: kafka-lag-exporter
+    hostname: kafka-lag-exporter
+    restart: always
+    #command: ["/opt/docker/bin/kafka-lag-exporter", "-Dconfig.file=/opt/docker/conf/application.conf", "-Dlogback.configurationFile=/opt/docker/conf/logback.xml"]
+    command: ["/opt/docker/bin/kafka-lag-exporter", "-Dconfig.file=/opt/docker/conf/application.conf"]
+    ports:
+      - "8000:8000"
+    volumes:
+      - "./kafka-lag-exporter:/opt/docker/conf/"
+    networks:
+      - prometheus-network
+
 networks:
   prometheus-network:
 
