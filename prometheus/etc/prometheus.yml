@@ -105,3 +105,23 @@ scrape_configs:
           - "kafka-lag-exporter:8000"
         labels:
           env: "dev"
+
+  - job_name: Confluent Cloud
+    scrape_interval: 1m
+    scrape_timeout: 1m
+    honor_timestamps: true
+    static_configs:
+      - targets:
+        - api.telemetry.confluent.cloud
+    scheme: https
+    basic_auth:
+      username: XXXX
+      password: XXXX
+    metrics_path: /v2/metrics/cloud/export
+    params:
+      "resource.kafka.id":
+        - lkc-xxxxxx
+        - lkc-xxxxxx
+      "resource.schema_registry.id":
+        - lsrc-xxxxx
+
