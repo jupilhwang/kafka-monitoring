@@ -17,8 +17,8 @@ services:
       - '--web.console.templates=/etc/prometheus/consoles'
       - '--web.enable-remote-write-receiver'
     volumes:
-      - ./prometheus/etc:/etc/prometheus
       - prometheus-data:/prometheus
+      - ./prometheus/etc:/etc/prometheus
     ports:
       - 9090:9090
 
@@ -62,15 +62,28 @@ services:
     volumes:
       - "./kafka-lag-exporter:/opt/docker/conf/"
 
-  zipkin:
-    image: openzipkin/zipkin
-    container_name: zipkin
-    hostname: zipkin
+  jaeger:
+    image: jaegertracing/all-in-one
+    container_name: jaeger
+    hostname: jaeger
     environment:
-      STORAGE_TYPE: mem
-      KAFKA_BOOTSTRAP_SERVERS: kafka-01:19091
+      - COLLECTOR_ZIPKIN_HOST_PORT=9411
     ports:
       - 9411:9411
+      - 5775:5775
+      - 6831:6831
+      - 6832:6832
+      - 5778:5778
+      - 16686:16686
+      - 14268:14268
+      - 14250:14250
+
+  # zipkin:
+  #   image: openzipkin/zipkin
+  #   container_name: jaeger
+  #   hostname: jaeger
+  #   ports:
+  #     - 9411:9411
 
 volumes:
   prometheus-data:
