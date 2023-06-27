@@ -7,25 +7,38 @@ services:
     restart: always
     #network_mode: "host" 
     command:
-      - '--web.listen-address=0.0.0.0:9090'
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=10d'
+      - '--storage.tsdb.wal-compression'
+      - '--web.enable-lifecycle'
+      - '--web.listen-address=0.0.0.0:9090'
       - '--web.console.libraries=/etc/prometheus/console_libraries'
       - '--web.console.templates=/etc/prometheus/consoles'
-      - '--storage.tsdb.retention.time=200h'
-      - '--web.enable-lifecycle'
+      - '--web.enable-remote-write-receiver'
     volumes:
       - ./prometheus/etc:/etc/prometheus
       - prometheus-data:/prometheus
     ports:
       - 9090:9090
-    networks: 
-      - prometheus-network
+
+  #  prometheus-pushgateway:
+  #  image: prom/pushgateway
+  #  container_name: pushgateway
+  #  restart: always
+  #  command:
+  #    - '--web.listen-address=:9991'
+  #    - '--push.disable-consistency-check'
+  #    - '--persistence.interval=5m'
+  #  ports:
+  #    - 9991:9991
 
   grafana:
     container_name: grafana
     image: grafana/grafana
     restart: always
+    depends_on: 
+      - prometheus
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
@@ -36,10 +49,6 @@ services:
       - ./grafana:/etc/grafana/provisioning
     ports:
       - 3000:3000
-    depends_on: 
-      - prometheus
-    networks: 
-      - prometheus-network
 
   kafka-lag-exporter:
     image: lightbend/kafka-lag-exporter:0.6.8
@@ -52,11 +61,16 @@ services:
       - "8000:8000"
     volumes:
       - "./kafka-lag-exporter:/opt/docker/conf/"
-    networks:
-      - prometheus-network
 
-networks:
-  prometheus-network:
+  zipkin:
+    image: openzipkin/zipkin
+    container_name: zipkin
+    hostname: zipkin
+    environment:
+      STORAGE_TYPE: mem
+      KAFKA_BOOTSTRAP_SERVERS: kafka-01:19091
+    ports:
+      - 9411:9411
 
 volumes:
   prometheus-data:
@@ -71,3 +85,7 @@ volumes:
       type: "none"
       o: "bind" 
       device: "/opt/monitoring/grafana/data/"
+
+networks:
+  default:
+    name: confluent
