@@ -1,26 +1,35 @@
 version: '3'
 services:
 
+  nginx:
+    image: nginx
+    container_name: nginx
+    ports:
+      - 80:80
+    volumes:
+      - ${PWD}/nginx/nginx.conf:/etc/nginx/nginx.conf
+
   prometheus:
     image: prom/prometheus
     container_name: prometheus
     restart: always
     #network_mode: "host" 
     command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--storage.tsdb.retention.time=10d'
-      - '--storage.tsdb.wal-compression'
-      - '--web.enable-lifecycle'
-      - '--web.listen-address=0.0.0.0:9090'
-      - '--web.console.libraries=/etc/prometheus/console_libraries'
-      - '--web.console.templates=/etc/prometheus/consoles'
-      - '--web.enable-remote-write-receiver'
-    volumes:
-      - prometheus-data:/prometheus
-      - ./prometheus/etc:/etc/prometheus
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=10d
+      - --storage.tsdb.wal-compression
+      - --web.enable-lifecycle
+      - --web.listen-address=0.0.0.0:9090
+      - --web.console.libraries=/etc/prometheus/console_libraries
+      - --web.console.templates=/etc/prometheus/consoles
+      - --web.enable-remote-write-receiver
+      - --web.external-url=/prometheus
     ports:
       - 9090:9090
+    volumes:
+      - ${PWD}/prometheus/etc:/etc/prometheus
+      - prometheus-data:/prometheus
 
   #  prometheus-pushgateway:
   #  image: prom/pushgateway
@@ -44,12 +53,19 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource,grafana-piechart-panel
+      # - GF_SERVER_PROTOCOL=http
+      # - GF_SERVER_DOMAIN=jumpbox
+      - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s:%(http_port)s/grafana/
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+    ports:
+      - 3000:3000
     volumes:
+      - ${PWD}/grafana:/etc/grafana/provisioning
       - grafana-data:/var/lib/grafana
-      - ./grafana:/etc/grafana/provisioning
 
   loki:
     image: grafana/loki
+    container_name: loki
     ports:
       - 3100:3100
 
@@ -57,14 +73,15 @@ services:
     image: grafana/tempo
     container_name: tempo
     command:
-      - '-config.file=/etc/tempo.yaml'
+      - -config.file=/etc/tempo.yaml
     ports:
       - 3200:3200
       - 55680:55680
       - 55681:55681
       - 14250:14250
     volumes:
-      - ${pwd}/tempo/tempo.yaml:/etc/tempo.yaml
+      - ${PWD}/tempo/tempo.yaml:/etc/tempo.yaml
+      - tempo-data:/tmp/tempo
 
   kafka-lag-exporter:
     image: lightbend/kafka-lag-exporter:0.6.8
@@ -76,7 +93,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - "./kafka-lag-exporter:/opt/docker/conf/"
+      - "${PWD}/kafka-lag-exporter:/opt/docker/conf/"
 
   # jaeger:
   #   image: jaegertracing/all-in-one
@@ -173,6 +190,12 @@ volumes:
       type: "none"
       o: "bind" 
       device: "/opt/monitoring/grafana/data/"
+  tempo-data:
+    driver: local
+    driver_opts:
+      type: "none"
+      o: "bind" 
+      device: "/opt/monitoring/tempo/"
 
 networks:
   default:

@@ -39,8 +39,8 @@ scrape_configs:
         labels:
           env: "dev"
 
-  - job_name: "confluent-telemetry-metrics"
-    static_configs:
-      - targets:
-        - 172.31.62.53:12345
+  # - job_name: "confluent-telemetry-metrics"
+  #   static_configs:
+  #     - targets:
+  #       - 172.31.62.53:12345
 

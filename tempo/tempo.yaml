@@ -19,6 +19,14 @@ distributor:
       protocols:
         http:
         grpc:            # This example repository only utilises the OTLP gRPC receiver on port 4317.
+    # zipkin:
+    # opencensus:
+    kafka:
+      topic: zipkin
+      encoding: otlp_proto
+      protocol_version: 3.0.0
+      brokers:
+        - kafka-01:9092
 
 # The ingester receives data from the distributor and processes it into indices and blocks.
 ingester:
@@ -51,42 +59,42 @@ storage:
       max_workers: 100                 # Worker pool determines the number of parallel requests to the object store backend.
       queue_depth: 10000               # Maximum depth for the querier queue jobs. A job is required for each block searched.
 
-# # Configures the metrics generator component of Tempo.
-# metrics_generator:
-#   # Specifies which processors to use.
-#   processor:
-#     # Span metrics create metrics based on span type, duration, name and service.
-#     span_metrics:
-#         # Configure extra dimensions to add as metric labels.
-#         dimensions:
-#           - http.method
-#           - http.target
-#           - http.status_code
-#           - service.version
-#     # Service graph metrics create node and edge metrics for determinng service interactions.
-#     service_graphs:
-#         # Configure extra dimensions to add as metric labels.
-#         dimensions:
-#           - http.method
-#           - http.target
-#           - http.status_code
-#           - service.version
-#   # The registry configuration determines how to process metrics.
-#   registry:
-#     collection_interval: 5s                 # Create new metrics every 5s.
-#     # Configure extra labels to be added to metrics.
-#     external_labels:
-#       source: tempo                         # Add a `{source="tempo"}` label.
-#       group: 'mythical'                     # Add a `{group="mythical"}` label.
-#   # Configures where the store for metrics is located.
-#   storage:
-#     # WAL for metrics generation.
-#     path: /tmp/tempo/generator/wal
-#     # Where to remote write metrics to.
-#     remote_write:
-#       - url: http://mimir:9009/api/v1/push  # URL of locally running Mimir instance.
-#         send_exemplars: true                # Send exemplars along with their metrics.
+# Configures the metrics generator component of Tempo.
+metrics_generator:
+  # Specifies which processors to use.
+  processor:
+    # Span metrics create metrics based on span type, duration, name and service.
+    span_metrics:
+        # Configure extra dimensions to add as metric labels.
+        dimensions:
+          - http.method
+          - http.target
+          - http.status_code
+          - service.version
+    # Service graph metrics create node and edge metrics for determinng service interactions.
+    service_graphs:
+        # Configure extra dimensions to add as metric labels.
+        dimensions:
+          - http.method
+          - http.target
+          - http.status_code
+          - service.version
+  # The registry configuration determines how to process metrics.
+  registry:
+    collection_interval: 5s                 # Create new metrics every 5s.
+    # Configure extra labels to be added to metrics.
+    external_labels:
+      source: tempo                         # Add a `{source="tempo"}` label.
+      group: 'webapp'                     # Add a `{group="mythical"}` label.
+  # Configures where the store for metrics is located.
+  storage:
+    # WAL for metrics generation.
+    path: /tmp/tempo/generator/wal
+    # Where to remote write metrics to.
+    remote_write:
+      - url: http://prometheus:9099/api/v1/write  # URL of locally running Mimir instance.
+        send_exemplars: true                # Send exemplars along with their metrics.
 
-# # Global override configuration.
-# overrides:
-#   metrics_generator_processors: ['service-graphs', 'span-metrics'] # The types of metrics generation to enable for each tenant.
+# Global override configuration.
+overrides:
+  metrics_generator_processors: ['service-graphs', 'span-metrics'] # The types of metrics generation to enable for each tenant.
