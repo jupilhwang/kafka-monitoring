@@ -23,7 +23,7 @@ distributor:
     # opencensus:
     kafka:
       topic: zipkin
-      encoding: otlp_proto
+      encoding: zipkin_proto
       protocol_version: 3.0.0
       brokers:
         - kafka-01:9092
