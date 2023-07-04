@@ -1,0 +1,30 @@
+global:
+  resolve_timeout: 1m
+
+route:
+  receiver: slack
+  routes:
+    - receiver: pager
+      group_wait: 10s
+      match_re:
+        severity: critical|warning
+      continue: true
+
+    - receiver: slack
+      group_wait: 10s
+      match_re:
+        severity: critical
+      continue: true
+
+receivers:
+  - name: pager
+    webhook_configs:
+      - url: https://ngrok.io
+
+  - name: slack
+    slack_configs:
+      - send_resolved: true
+        text: "{{ .CommonAnnotations.description }}"
+        username: Prometheus
+        channel: '#prometheus'
+        api_url: 'https://hooks.slack.com/services/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'

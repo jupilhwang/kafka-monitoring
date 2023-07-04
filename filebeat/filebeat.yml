@@ -1,0 +1,32 @@
+filebeat.inputs:
+- type: container
+  paths:
+    - /var/lib/docker/containers/*/*.log
+
+processors:
+- add_docker_metadata:
+    host: unix:///var/run/docker.sock
+
+- decode_json_fields:
+    fields: ["message"]
+    target: "json"
+    overwrite_keys: true
+
+output.elasticsearch:
+  hosts: ["opensearch-node1:9200"]
+  protocol: http
+  username: admin
+  password: admin
+  #ecs_compatibility: disabled
+  #ssl_certificate_verification: false
+  indices:
+    - index: "filebeat-%{[agent.version]}-%{+yyyy.MM.dd}"
+
+
+logging.json: true
+logging.metrics.enabled: false
+
+# X-Pack: disabled
+setup.ilm.enabled: false
+setup.template.enabled: false
+ilm.enabled: false
