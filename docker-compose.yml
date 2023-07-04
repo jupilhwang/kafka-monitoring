@@ -15,7 +15,7 @@ services:
       - --web.console.libraries=/etc/prometheus/console_libraries
       - --web.console.templates=/etc/prometheus/consoles
       - --web.enable-remote-write-receiver
-      # - --web.external-url=/prometheus
+      - --web.external-url=/prometheus
     ulimits:
       memlock:
         soft: -1
@@ -55,7 +55,7 @@ services:
   #    - 9991:9991
 
   grafana:
-    image: grafana/grafana-oss
+    image: grafana/grafana
     container_name: grafana
     restart: always
     environment:
@@ -65,8 +65,8 @@ services:
       - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource,grafana-piechart-panel
       # - GF_SERVER_PROTOCOL=http
       # - GF_SERVER_DOMAIN=jumpbox
-      # - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s:%(http_port)s/grafana/
-      # - GF_SERVER_SERVE_FROM_SUB_PATH=true
+      - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s:%(http_port)s/grafana/
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
     ulimits:
       memlock:
         soft: -1
