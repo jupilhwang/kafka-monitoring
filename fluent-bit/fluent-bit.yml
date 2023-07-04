@@ -1,0 +1,25 @@
+env:
+  flush_interval: 5
+
+service:
+  flush: ${flush_interval}
+  log_level: info
+  http_server: on
+  # parsers_file: parsers_multilines.conf
+
+pipeline:
+  - inputs:
+    # - tail:
+    #   tag: containers
+    #   path: /var/log/docker/containers/*/*.log
+    - docker:
+      include: 5fad26d38453 15248476c09f 66d2450a8b73 297f61ce6b8a
+
+  - outputs:
+    - sysout:
+      match: *
+
+    - opensearch:
+      match: *
+      host: opensearch-node1
+      port: 9200

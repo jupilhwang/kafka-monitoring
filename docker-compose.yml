@@ -1,8 +1,5 @@
 version: '3'
 services:
-
-
-
   prometheus:
     image: prom/prometheus
     container_name: prometheus
@@ -18,12 +15,33 @@ services:
       - --web.console.libraries=/etc/prometheus/console_libraries
       - --web.console.templates=/etc/prometheus/consoles
       - --web.enable-remote-write-receiver
-      - --web.external-url=/prometheus
+      # - --web.external-url=/prometheus
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
     ports:
       - 9090:9090
     volumes:
       - ${PWD}/prometheus/etc:/etc/prometheus
       - prometheus-data:/prometheus
+
+  # alertmanager:
+  #   image: prom/alertmanager
+  #   container_name: alertmanager
+  #   ports:
+  #     - 9093:9093
+  #   volumes:
+  #     - ${PWD}/alertmanager/:/etc/alertmanager/
+  #   restart: always
+  #   command:
+  #     - --config.file=/etc/alertmanager/alertmanager.yml
+  #     - --storage.path=/alertmanager
+  #   deploy:
+  #     mode: global
 
   #  prometheus-pushgateway:
   #  image: prom/pushgateway
@@ -37,11 +55,9 @@ services:
   #    - 9991:9991
 
   grafana:
-    image: grafana/grafana
+    image: grafana/grafana-oss
     container_name: grafana
     restart: always
-    depends_on: 
-      - prometheus
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
@@ -49,8 +65,15 @@ services:
       - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource,grafana-piechart-panel
       # - GF_SERVER_PROTOCOL=http
       # - GF_SERVER_DOMAIN=jumpbox
-      - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s:%(http_port)s/grafana/
-      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+      # - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s:%(http_port)s/grafana/
+      # - GF_SERVER_SERVE_FROM_SUB_PATH=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
     ports:
       - 3000:3000
     volumes:
@@ -68,6 +91,13 @@ services:
     container_name: tempo
     command:
       - -config.file=/etc/tempo.yaml
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
     ports:
       - 3200:3200
       - 55680:55680
@@ -160,22 +190,120 @@ services:
   #     retries: 3 
   #   depends_on:
   #     jaeger-remote-storage:
-  #       condition: service_healthy
-  #   links:
-  #     - jaeger-remote-storage
+  #       condition: service_healthy  
+  
+  #
+  # OpenSearch Node & Dashboard
+  #
+  opensearch-node1:
+    image: opensearchproject/opensearch
+    container_name: opensearch-node1
+    environment:
+      - cluster.name=opensearch-cluster
+      - node.name=opensearch-node1
+      - discovery.seed_hosts=opensearch-node1,opensearch-node2
+      - cluster.initial_master_nodes=opensearch-node1,opensearch-node2
+      - bootstrap.memory_lock=true # along with the memlock settings below, disables swapping
+      - "OPENSEARCH_JAVA_OPTS=-Xms1G -Xmx1G" # minimum and maximum Java heap size, recommend setting both to 50% of system RAM
+      - network.host=0.0.0.0
+      - "DISABLE_INSTALL_DEMO_CONFIG=true" # Prevents execution of bundled demo script which installs demo certificates and security configurations to OpenSearch
+      - "DISABLE_SECURITY_PLUGIN=true" # Disables Security plug      
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536 # maximum number of open files for the OpenSearch user, set to at least 65536 on modern systems
+        hard: 65536
+    volumes:
+      - opensearch-data1:/usr/share/opensearch/data
+    ports:
+      - 9200:9200
+      - 9600:9600 # required for Performance Analyzer
+    # networks:
+    #   - opensearch-net
 
-  # zipkin:
-  #   image: openzipkin/zipkin
-  #   container_name: zipkin
-  #   hostname: zipkin
-  #   ports:
-  #     - 9411:9411
+  opensearch-node2:
+    image: opensearchproject/opensearch
+    container_name: opensearch-node2
+    environment:
+      - cluster.name=opensearch-cluster
+      - node.name=opensearch-node2
+      - discovery.seed_hosts=opensearch-node1,opensearch-node2
+      - cluster.initial_master_nodes=opensearch-node1,opensearch-node2
+      - bootstrap.memory_lock=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms1G -Xmx1G"
+      - network.host=0.0.0.0
+      - "DISABLE_INSTALL_DEMO_CONFIG=true" # Prevents execution of bundled demo script which installs demo certificates and security configurations to OpenSearch
+      - "DISABLE_SECURITY_PLUGIN=true" # Disables Security plug      
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - opensearch-data2:/usr/share/opensearch/data
+    # networks:
+    #   - opensearch-net
+
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards
+    container_name: opensearch-dashboards
+    ports:
+      - 5601:5601
+    expose:
+      - "5601"
+    environment:
+      - OPENSEARCH_HOSTS=["http://opensearch-node1:9200","http://opensearch-node2:9200"] # must be a string with no spaces when specified as an environment variable
+      - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
+      - SERVER_HOST=0.0.0.0
+      - SERVER_BASEPATH=/opensearch
+      - SERVER_REWRITEBASEPATH=true
+      - OPENSEARCH_USERNAME=admin
+      - OPENSEARCH_PASSWORD=admin
+
+    # networks:
+    #   - opensearch-net
+
+  # filebeat:
+  #   image: secureimages/filebeat-oss:7.11.1-alpine-3.13.2
+  #   container_name: filebeat
+  #   restart: unless-stopped
+  #   user: root
+  #   labels:
+  #     co.elastic.logs/enabled: "false"   
+  #   environment:
+  #     - ELASTICSEARCH_HOSTS=["https://opensearch-node1:9200"]
+  #   volumes:
+  #     - ${PWD}/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml
+  #     - /var/run/docker.sock:/var/run/docker.sock
+  #     - /var/lib/docker:/var/lib/docker:ro
+
+  fluent-bit:
+    image: fluent/fluent-bit
+    container_name: fluent-bit
+    user: root
+    command:
+      - "/fluent-bit/bin/fluent-bit -c /fluent-bit/etc/fluent-bit.yml"
+    environment:
+      - HTTP_SERVER=localhost
+      - HTTP_PORT=2020
+    ports:
+      - 2020:2020
+    volumes:
+      - ${PWD}/fluent-bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf
+      - ${PWD}/fluent-bit/fluent-bit.yml:/fluent-bit/etc/fluent-bit.yml
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker:/var/lib/docker:ro
 
   nginx:
     image: nginx
     container_name: nginx
     depends_on: 
       - grafana
+      - opensearch-dashboards
     ports:
       - 80:80
     volumes:
@@ -200,6 +328,18 @@ volumes:
       type: "none"
       o: "bind" 
       device: "/opt/monitoring/tempo/"
+  opensearch-data1:
+    driver: local
+    driver_opts:
+      type: "none"
+      o: "bind" 
+      device: "/opt/monitoring/opensearch/data1"
+  opensearch-data2:
+    driver: local
+    driver_opts:
+      type: "none"
+      o: "bind" 
+      device: "/opt/monitoring/opensearch/data2"
 
 networks:
   default:

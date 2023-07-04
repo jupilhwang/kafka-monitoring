@@ -44,3 +44,9 @@ scrape_configs:
   #     - targets:
   #       - 172.31.62.53:12345
 
+  - job_name: kafka-connect
+    static_configs:
+      - targets:
+          - 172.31.62.53:8077
+        labels:
+          env: "dev"
