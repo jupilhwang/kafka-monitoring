@@ -223,7 +223,7 @@ opensearchDashboards.branding:
 
 # Set the value of this setting to false to suppress search usage telemetry
 # for reducing the load of OpenSearch cluster.
-data.search.usageTelemetry.enabled: true
+# data.search.usageTelemetry.enabled: true
 
 # Set the value of this setting to false to disable VisBuilder
 # functionality in Visualization.

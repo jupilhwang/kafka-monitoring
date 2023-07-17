@@ -1,0 +1,12 @@
+sample-pipeline:
+  source:
+    otel_logs_source:
+      ssl: false
+  processor:
+  route:
+  sink:
+    - opensearch:
+        hosts: [ "http://opensearch-node1:9200" ]
+        index: all_logs
+        #username: admin
+        #password: admin

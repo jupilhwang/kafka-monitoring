@@ -12,11 +12,41 @@ services:
   #   volumes:
   #    - ${PWD}/consul/server.json:/consul/config/server.json:ro
 
+  # OpenTelemetry Collector
+  # otelcol:
+  #   image: otel/opentelemetry-collector-contrib
+  #   container_name: otel-col
+  #   network_mode: host
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 125M
+  #   restart: unless-stopped
+  #   command: 
+  #     - --config=/etc/otelcol-config.yml
+  #     - --config=/etc/otelcol-observability.yml
+  #     - --config=/etc/otelcol-config-extras.yml
+  #   ports:
+  #     - "4317"          # OTLP over gRPC receiver
+  #     - "4318:4318"     # OTLP over HTTP receiver
+  #     # - "9464"          # Prometheus exporter
+  #   volumes:
+  #     - ${PWD}/otel-col/otelcol-config.yml:/etc/otelcol-config.yml
+  #     - ${PWD}/otel-col/otelcol-observability.yml:/etc/otelcol-observability.yml
+  #     - ${PWD}/otel-col/otelcol-config-extras.yml:/etc/otelcol-config-extras.yml
+
   prometheus:
     image: prom/prometheus
     container_name: prometheus
     restart: always
     #network_mode: "host" 
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
@@ -28,13 +58,6 @@ services:
       - --web.console.templates=/etc/prometheus/consoles
       - --web.enable-remote-write-receiver
       - --web.external-url=/prometheus
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-      nofile:
-        soft: 65536
-        hard: 65536
     ports:
       - 9090:9090
     volumes:
@@ -239,16 +262,16 @@ services:
         # RUN rm -rf /usr/share/grafana/public/app/plugins/panel/traces
 
         # ##################################################################
-    logging:
-      driver: loki
-      options:
-        loki-url: 'http://loki:3100/api/prom/push'
+    # logging:
+    #   driver: loki
+    #   options:
+    #     loki-url: 'http://loki:3100/api/prom/push'
 
-  loki:
-    image: grafana/loki
-    container_name: loki
-    ports:
-      - 3100:3100
+  # loki:
+  #   image: grafana/loki
+  #   container_name: loki
+  #   ports:
+  #     - 3100:3100
 
   tempo:
     image: grafana/tempo
@@ -362,7 +385,6 @@ services:
   
   #
   # OpenSearch Node & Dashboard
-  #
   opensearch-node1:
     image: opensearchproject/opensearch
     container_name: opensearch-node1
@@ -436,8 +458,17 @@ services:
       # - ${PWD}/opensearch/opensearch_dashboards.yml:/usr/share/opensearch-dashboards/opensearch_dashboards.yml
       - ${PWD}/opensearch/opensearch_dashboards.yml:/usr/share/opensearch-dashboards/config/opensearch_dashboards.yml
 
-    # networks:
-    #   - opensearch-net
+  data-prepper:
+    image: opensearchproject/data-prepper
+    container_name: data-prepper
+    ports: 
+      - 21890:21890 #trace
+      - 21891:21891 #metrics
+      - 21892:21892 #log
+      - 4900:4900
+      - 2021:2021
+    volumes:
+      - ${PWD}/opensearch/pipelines.yml:/usr/share/data-prepper/pipelines/pipelines.yml
 
   # filebeat:
   #   image: secureimages/filebeat-oss:7.11.1-alpine-3.13.2
@@ -453,29 +484,66 @@ services:
   #     - /var/run/docker.sock:/var/run/docker.sock
   #     - /var/lib/docker:/var/lib/docker:ro
 
-  fluent-bit:
-    image: fluent/fluent-bit
-    container_name: fluent-bit
-    user: root
-    command:
-      - "/fluent-bit/bin/fluent-bit -c /fluent-bit/etc/fluent-bit.yml"
-    environment:
-      - HTTP_SERVER=localhost
-      - HTTP_PORT=2020
-    ports:
-      - 2020:2020
-    volumes:
-      - ${PWD}/fluent-bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf
-      - ${PWD}/fluent-bit/fluent-bit.yml:/fluent-bit/etc/fluent-bit.yml
-      - /var/run/docker.sock:/var/run/docker.sock
-      - /var/lib/docker:/var/lib/docker:ro
+  # fluent-bit:
+  #   image: fluent/fluent-bit
+  #   container_name: fluent-bit
+  #   user: root
+  #   command:
+  #     - "/fluent-bit/bin/fluent-bit -c /fluent-bit/etc/fluent-bit.yml"
+  #   environment:
+  #     - HTTP_SERVER=localhost
+  #     - HTTP_PORT=2020
+  #   ports:
+  #     - 2020:2020
+  #   volumes:
+  #     - ${PWD}/fluent-bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf
+  #     - ${PWD}/fluent-bit/fluent-bit.yml:/fluent-bit/etc/fluent-bit.yml
+  #     - /var/run/docker.sock:/var/run/docker.sock
+  #     - /var/lib/docker:/var/lib/docker:ro
+
+  # elasticsearch:
+  #   image: docker.elastic.co/elasticsearch/elasticsearch-oss:7.10.2
+  #   container_name: elasticsearch
+  #   #restart: always
+  #   healthcheck:
+  #     start_period: 10s
+  #     interval: 10s
+  #     retries: 20
+  #     test: curl -s http://localhost:9200/_cluster/health | grep -vq '"status":"red"'
+  #   ports:
+  #     - 9200:9200
+  #     - 9300:9300
+  #   environment:
+  #     discovery.type: "single-node"
+  #     ES_JAVA_OPTS: "-Xms1g -Xmx1g"
+  #     cluster.name: "elasticsearch"
+
+  # kibana:
+  #   image: docker.elastic.co/kibana/kibana-oss:7.10.2
+  #   container_name: kibana
+  #   restart: always
+  #   healthcheck:
+  #     interval: 10s
+  #     retries: 20
+  #     test: curl --write-out 'HTTP %{http_code}' --fail --silent --output /dev/null http://kibana:5601/api/status || exit 1
+  #   depends_on:
+  #     elasticsearch:
+  #       condition: service_healthy
+  #   ports:
+  #     - 5601:5601
+  #   environment:
+  #     NEWSFEED_ENABLED: 'false'
+  #     TELEMETRY_OPTIN: 'false'
+  #     TELEMETRY_ENABLED: 'false'
+  #     SERVER_MAXPAYLOADBYTES: 4194304
+  #     KIBANA_AUTOCOMPLETETIMEOUT: 3000
+  #     KIBANA_AUTOCOMPLETETERMINATEAFTER: 2500000
 
   nginx:
     image: nginx
     container_name: nginx
     depends_on: 
       - grafana
-      - opensearch
     ports:
       - 80:80
     volumes:
