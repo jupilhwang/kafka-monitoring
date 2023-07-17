@@ -15,18 +15,20 @@ distributor:
         grpc:            # For a production deployment you should only enable the receivers you need!
         thrift_binary:   #
         thrift_compact:
-    otlp:
-      protocols:
-        http:
-        grpc:            # This example repository only utilises the OTLP gRPC receiver on port 4317.
+
+    # otlp:
+    #   protocols:
+    #     http:
+    #     grpc:            # This example repository only utilises the OTLP gRPC receiver on port 4317.
     # zipkin:
     # opencensus:
-    kafka:
-      topic: zipkin
-      encoding: zipkin_proto
-      protocol_version: 3.0.0
-      brokers:
-        - kafka-01:9092
+
+    # kafka:
+    #   topic: zipkin
+    #   encoding: zipkin_proto
+    #   protocol_version: 3.0.0
+    #   brokers:
+    #     - 172.31.62.53:9092
 
 # The ingester receives data from the distributor and processes it into indices and blocks.
 ingester:
@@ -92,7 +94,7 @@ metrics_generator:
     path: /tmp/tempo/generator/wal
     # Where to remote write metrics to.
     remote_write:
-      - url: http://prometheus:9099/api/v1/write  # URL of locally running Mimir instance.
+      - url: http://prometheus:9099/prometheus/api/v1/write  # URL of locally running Mimir instance.
         send_exemplars: true                # Send exemplars along with their metrics.
 
 # Global override configuration.

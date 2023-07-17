@@ -11,8 +11,8 @@ global:
 #         - targets:
           # - alertmanager:9093
 
-# remote_write:
-#   - url: http://localhost:9090/api/v1/write
+remote_write:
+  - url: http://localhost:9090/prometheus/api/v1/write
 #     queue_config:
 #       #capacity: 2500
 #       #max_shards: 100
@@ -64,12 +64,11 @@ scrape_configs:
   #       regex: '([^:]+)(:[0-9]+)?'
   #       replacement: '${1}'
 
-
   # - job_name: "kafka-broker"
   #   static_configs:
   #     - targets:
-  #         - "kafka1:1234"
-  #         - "kafka2:1234"
+  #         - "172.31.62.53:8070"
+  #         # - "kafka2:1234"
   #       labels:
   #         env: "dev"
   #   relabel_configs:
@@ -77,7 +76,6 @@ scrape_configs:
   #       target_label: hostname
   #       regex: '([^:]+)(:[0-9]+)?'
   #       replacement: '${1}'
-
 
   # - job_name: "schema-registry"
   #   static_configs:
@@ -91,18 +89,18 @@ scrape_configs:
   #       regex: '([^:]+)(:[0-9]+)?'
   #       replacement: '${1}'
 
-  - job_name: "kafka-connect"
-    static_configs:
-      - targets:
-          - "172.31.62.53:8077"
-        labels:
-          env: "dev"
-          kafka_connect_cluster_id: "kafka-connect"
-    relabel_configs:
-      - source_labels: [__address__]
-        target_label: hostname
-        regex: '([^:]+)(:[0-9]+)?'
-        replacement: '${1}'
+  # - job_name: "kafka-connect"
+  #   static_configs:
+  #     - targets:
+  #         - "172.31.62.53:8077"
+  #       labels:
+  #         env: "dev"
+  #         kafka_connect_cluster_id: "kafka-connect"
+  #   relabel_configs:
+  #     - source_labels: [__address__]
+  #       target_label: hostname
+  #       regex: '([^:]+)(:[0-9]+)?'
+  #       replacement: '${1}'
 
   # - job_name: "ksqldb"
   #   static_configs:
