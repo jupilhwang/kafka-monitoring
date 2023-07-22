@@ -1,17 +1,5 @@
 version: '3'
 services:
-  # consul:
-  #   image: hashicorp/consul
-  #   container_name: consul
-  #   restart: always
-  #   ports:
-  #     - "8500:8500"
-  #     - "8600:8600/tcp"
-  #     - "8600:8600/udp"
-  #   command: agent
-  #   volumes:
-  #    - ${PWD}/consul/server.json:/consul/config/server.json:ro
-
   # OpenTelemetry Collector
   # otelcol:
   #   image: otel/opentelemetry-collector-contrib
@@ -35,79 +23,63 @@ services:
   #     - ${PWD}/otel-col/otelcol-observability.yml:/etc/otelcol-observability.yml
   #     - ${PWD}/otel-col/otelcol-config-extras.yml:/etc/otelcol-config-extras.yml
 
-  prometheus:
-    image: prom/prometheus
-    container_name: prometheus
-    restart: always
-    #network_mode: "host" 
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-      nofile:
-        soft: 65536
-        hard: 65536
-    command:
-      - --config.file=/etc/prometheus/prometheus.yml
-      - --storage.tsdb.path=/prometheus
-      - --storage.tsdb.retention.time=10d
-      - --storage.tsdb.wal-compression
-      - --web.enable-lifecycle
-      - --web.listen-address=0.0.0.0:9090
-      - --web.console.libraries=/etc/prometheus/console_libraries
-      - --web.console.templates=/etc/prometheus/consoles
-      - --web.enable-remote-write-receiver
-      - --web.external-url=/prometheus
-    ports:
-      - 9090:9090
+  # otel-collector with qryn exporter
+  otel-collector:
+    image: ghcr.io/metrico/qryn-otel-collector
+    container_name: otel-collector
+    restart: on-failure
     volumes:
-      - ${PWD}/prometheus/etc:/etc/prometheus
-      - prometheus-data:/prometheus
+      - ${PWD}/otel-collector/otel-collector-config.yml:/etc/otel/config.yaml
+    ports:
+      - "4317:4317"     # OTLP gRPC receiver
+      - "4318:4318"     # OTLP HTTP receiver
+      - "14250:14250"   # Jaeger gRPC
+      - "14268:14268"   # Jaeger thrift HTTP
+      - "9411:9411"     # Zipkin port
+      - "24224:24224"   # Fluent Forward
 
-  # cortex:
-  #   image: cortexproject/cortex:v1.15.3
-  #   container_name: cortex
-  #   command:
-  #     - -config.file=/etc/cortex-config-blocks-local.yml
-  #     - -ring.store=consul
-  #     - -consul.hostname=consul:8500
-  #   ulimits:
-  #     memlock:
-  #       soft: -1
-  #       hard: -1
-  #     nofile:
-  #       soft: 65536
-  #       hard: 65536
-  #   ports:
-  #     - 9090:9090
-  #   volumes:
-  #     - ${PWD}/cortex/cortex-config-block-local.yml:/etc/cortex-config-blocks-local.yml:ro
-  #     - cortex-data:/tmp/cotex:rw
+  qryn:
+    image: qxip/qryn:latest
+    container_name: qryn
+    restart: unless-stopped
+    ports:
+      - 3100:3100
+    environment:
+      - CLICKHOUSE_SERVER=clickhouse
+      - CLICKHOUSE_AUTH=admin:admin
+      #- LOG_LEVEL=debug
+      - NODE_OPTIONS="--max-old-space-size=4096"
+      - ALERTMAN_URL=http://alertmanager:9093
+    depends_on:
+       clickhouse:
+         condition: service_healthy
 
-  # alertmanager:
-  #   image: prom/alertmanager
-  #   container_name: alertmanager
-  #   ports:
-  #     - 9093:9093
-  #   volumes:
-  #     - ${PWD}/alertmanager/:/etc/alertmanager/
-  #   restart: always
-  #   command:
-  #     - --config.file=/etc/alertmanager/alertmanager.yml
-  #     - --storage.path=/alertmanager
-  #   deploy:
-  #     mode: global
+  clickhouse:
+    image: clickhouse/clickhouse-server
+    container_name: clickhouse
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'wget', '--spider', '-q', '127.0.0.1:8123/ping']
+      interval: 1s
+      timeout: 1s
+      retries: 30
+    environment:
+      - CLICKHOUSE_USER=admin
+      - CLICKHOUSE_PASSWORD=admin
+    ports:
+      - 8123:8123
+      - 9000:9000
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ${PWD}/clickhouse/opentelemetry_zipkin.sql:/docker-entrypoint-initdb.d/opentelemetry_zipkin.sql
 
-  #  prometheus-pushgateway:
-  #  image: prom/pushgateway
-  #  container_name: pushgateway
-  #  restart: always
-  #  command:
-  #    - '--web.listen-address=:9991'
-  #    - '--push.disable-consistency-check'
-  #    - '--persistence.interval=5m'
-  #  ports:
-  #    - 9991:9991
+  alertmanager:
+    image: prom/alertmanager
+    container_name: alertmanager
+    ports:
+      - 9093:9093
+    volumes:
+      - ${PWD}/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
 
   grafana:
     image: grafana/grafana-oss
@@ -124,7 +96,10 @@ services:
       - GF_ENABLE_GZIP=true
       - GF_USERS_DEFAULT_THEME=dark
       - GF_ALERTING_ENABLED=false
-      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource,grafana-piechart-panel,nagasudhirpulla-api-datasource
+      - GF_UNIFIED_ALERTING_ENABLED=true
+      - GF_FEATURE_TOGGLES_ENABLE=traceToMetrics,publicDashboards,tempoApmTable
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource,grafana-piechart-panel,grafana-clickhouse-datasource,vertamedia-clickhouse-datasource
+      - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=vertamedia-clickhouse-datasource
       # - GF_SERVER_PROTOCOL=http
       # - GF_SERVER_DOMAIN=jumpbox
       - GF_SERVER_SERVE_FROM_SUB_PATH=true
@@ -262,41 +237,6 @@ services:
         # RUN rm -rf /usr/share/grafana/public/app/plugins/panel/traces
 
         # ##################################################################
-    # logging:
-    #   driver: loki
-    #   options:
-    #     loki-url: 'http://loki:3100/api/prom/push'
-
-  # loki:
-  #   image: grafana/loki
-  #   container_name: loki
-  #   ports:
-  #     - 3100:3100
-
-  tempo:
-    image: grafana/tempo
-    container_name: tempo
-    command:
-      - -config.file=/etc/tempo.yaml
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-      nofile:
-        soft: 65536
-        hard: 65536
-    ports:
-      - 3200:3200
-      - 55680:55680
-      - 55681:55681
-      - 14250:14250
-    volumes:
-      - ${PWD}/tempo/tempo.yaml:/etc/tempo.yaml
-      - tempo-data:/tmp/tempo
-    # logging:
-    #   driver: loki
-    #   options:
-    #     loki-url: 'http://localhost:3100/api/prom/push'
 
   kafka-lag-exporter:
     image: lightbend/kafka-lag-exporter:0.6.8
@@ -310,235 +250,6 @@ services:
     volumes:
       - "${PWD}/kafka-lag-exporter:/opt/docker/conf/"
 
-  # jaeger:
-  #   image: jaegertracing/all-in-one
-  #   container_name: jaeger
-  #   hostname: jaeger
-  #   restart: on-failure
-  #   ports:
-  #     - 9411:9411
-  #     - 5775:5775/udp
-  #     - 5778:5778
-  #     - 6831:6831/udp
-  #     - 6832:6832/udp
-  #     - 16686:16686
-  #     - 14268:14268
-  #     - 14250:14250
-  #     - 14270:14270
-  #   environment:
-  #     - COLLECTOR_ZIPKIN_HOST_PORT=9411
-  #     - COLLECTOR_OTLP_ENABLED=true
-      # - INGESTER_ENABLED=true
-      # - SPAN_STORAGE_TYPE=kafka
-      # - KAFKA_CONSUMER_BROKERS=172.31.62.53:9092
-      # - KAFKA_CONSUMER_TOPIC=zipkin
-
-  # jaeger-remote-storage:
-  #   image: jaegertracing/jaeger-remote-storage
-  #   container_name: jaeger-remote-storage
-  #   ports:
-  #     - 17271:17271
-  #   environment:
-  #     - SPAN_STORAGE_TYPE=memory
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:17270/ || exit 1"]
-  #     interval: 5s
-  #     timeout: 5s
-  #     retries: 3
-
-  # jaeger-ingester:
-  #   image: jaegertracing/jaeger-ingester
-  #   container_name: jaeger-ingester
-  #   command:
-  #     - "--grpc-storage.server=jaeger-remote-storage:17271"
-  #     - "--log-level=debug"
-  #   restart: always
-  #   environment:
-  #     - SPAN_STORAGE_TYPE=grpc-plugin
-  #     - KAFKA_CONSUMER_BROKERS=172.31.62.53:9092
-  #     - KAFKA_CONSUMER_TOPIC=zipkin
-  #     - KAFKA_CONSUMER_ENCODING=zipkin-thrift
-  #     - KAFKA_CONSUMER_PROTOCOL_VERSION=3.4.0
-  #   links:
-  #     - jaeger-remote-storage
-    
-  # jaeger-query:
-  #   image: jaegertracing/jaeger-query
-  #   container_name: jaeger-query
-  #   command:
-  #     - "--grpc-storage.server=jaeger-remote-storage:17271"
-  #     - "--log-level=debug"
-  #   environment:
-  #     - SPAN_STORAGE_TYPE=grpc-plugin
-  #   ports:
-  #     - "16686:16686"
-  #     - "16687"
-  #   restart: on-failure
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:16687/ || exit 1"]
-  #     interval: 5s
-  #     timeout: 5s
-  #     retries: 3 
-  #   depends_on:
-  #     jaeger-remote-storage:
-  #       condition: service_healthy  
-  
-  #
-  # OpenSearch Node & Dashboard
-  opensearch-node1:
-    image: opensearchproject/opensearch
-    container_name: opensearch-node1
-    environment:
-      - cluster.name=opensearch-cluster
-      - node.name=opensearch-node1
-      - discovery.seed_hosts=opensearch-node1,opensearch-node2
-      - cluster.initial_master_nodes=opensearch-node1,opensearch-node2
-      - bootstrap.memory_lock=true # along with the memlock settings below, disables swapping
-      - OPENSEARCH_JAVA_OPTS=-Xms1G -Xmx1G # minimum and maximum Java heap size, recommend setting both to 50% of system RAM
-      - network.host=0.0.0.0
-      - DISABLE_INSTALL_DEMO_CONFIG=true # Prevents execution of bundled demo script which installs demo certificates and security configurations to OpenSearch
-      - DISABLE_SECURITY_PLUGIN=true # Disables Security plug      
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-      nofile:
-        soft: 65536 # maximum number of open files for the OpenSearch user, set to at least 65536 on modern systems
-        hard: 65536
-    volumes:
-      - opensearch-data1:/usr/share/opensearch/data
-    ports:
-      - 9200:9200
-      - 9600:9600 # required for Performance Analyzer
-    # networks:
-    #   - opensearch-net
-
-  opensearch-node2:
-    image: opensearchproject/opensearch
-    container_name: opensearch-node2
-    environment:
-      - cluster.name=opensearch-cluster
-      - node.name=opensearch-node2
-      - discovery.seed_hosts=opensearch-node1,opensearch-node2
-      - cluster.initial_master_nodes=opensearch-node1,opensearch-node2
-      - bootstrap.memory_lock=true
-      - OPENSEARCH_JAVA_OPTS=-Xms1G -Xmx1G
-      - network.host=0.0.0.0
-      - DISABLE_INSTALL_DEMO_CONFIG=true # Prevents execution of bundled demo script which installs demo certificates and security configurations to OpenSearch
-      - DISABLE_SECURITY_PLUGIN=true # Disables Security plug      
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-      nofile:
-        soft: 65536
-        hard: 65536
-    volumes:
-      - opensearch-data2:/usr/share/opensearch/data
-    # networks:
-    #   - opensearch-net
-
-  opensearch:
-    image: opensearchproject/opensearch-dashboards
-    container_name: opensearch
-    ports:
-      - 5601:5601
-    expose:
-      - "5601"
-    environment:
-      - OPENSEARCH_HOSTS=["http://opensearch-node1:9200","http://opensearch-node2:9200"] # must be a string with no spaces when specified as an environment variable
-      - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
-      - SERVER_HOST=0.0.0.0
-      - SERVER_BASEPATH=/opensearch
-      - SERVER_REWRITEBASEPATH=true
-      - OPENSEARCH_USERNAME=admin
-      - OPENSEARCH_PASSWORD=admin
-      - data_source.enabled=true
-    volumes:
-      # - ${PWD}/opensearch/opensearch_dashboards.yml:/usr/share/opensearch-dashboards/opensearch_dashboards.yml
-      - ${PWD}/opensearch/opensearch_dashboards.yml:/usr/share/opensearch-dashboards/config/opensearch_dashboards.yml
-
-  data-prepper:
-    image: opensearchproject/data-prepper
-    container_name: data-prepper
-    ports: 
-      - 21890:21890 #trace
-      - 21891:21891 #metrics
-      - 21892:21892 #log
-      - 4900:4900
-      - 2021:2021
-    volumes:
-      - ${PWD}/opensearch/pipelines.yml:/usr/share/data-prepper/pipelines/pipelines.yml
-
-  # filebeat:
-  #   image: secureimages/filebeat-oss:7.11.1-alpine-3.13.2
-  #   container_name: filebeat
-  #   restart: unless-stopped
-  #   user: root
-  #   labels:
-  #     co.elastic.logs/enabled: "false"   
-  #   environment:
-  #     - ELASTICSEARCH_HOSTS=["https://opensearch-node1:9200"]
-  #   volumes:
-  #     - ${PWD}/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml
-  #     - /var/run/docker.sock:/var/run/docker.sock
-  #     - /var/lib/docker:/var/lib/docker:ro
-
-  # fluent-bit:
-  #   image: fluent/fluent-bit
-  #   container_name: fluent-bit
-  #   user: root
-  #   command:
-  #     - "/fluent-bit/bin/fluent-bit -c /fluent-bit/etc/fluent-bit.yml"
-  #   environment:
-  #     - HTTP_SERVER=localhost
-  #     - HTTP_PORT=2020
-  #   ports:
-  #     - 2020:2020
-  #   volumes:
-  #     - ${PWD}/fluent-bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf
-  #     - ${PWD}/fluent-bit/fluent-bit.yml:/fluent-bit/etc/fluent-bit.yml
-  #     - /var/run/docker.sock:/var/run/docker.sock
-  #     - /var/lib/docker:/var/lib/docker:ro
-
-  # elasticsearch:
-  #   image: docker.elastic.co/elasticsearch/elasticsearch-oss:7.10.2
-  #   container_name: elasticsearch
-  #   #restart: always
-  #   healthcheck:
-  #     start_period: 10s
-  #     interval: 10s
-  #     retries: 20
-  #     test: curl -s http://localhost:9200/_cluster/health | grep -vq '"status":"red"'
-  #   ports:
-  #     - 9200:9200
-  #     - 9300:9300
-  #   environment:
-  #     discovery.type: "single-node"
-  #     ES_JAVA_OPTS: "-Xms1g -Xmx1g"
-  #     cluster.name: "elasticsearch"
-
-  # kibana:
-  #   image: docker.elastic.co/kibana/kibana-oss:7.10.2
-  #   container_name: kibana
-  #   restart: always
-  #   healthcheck:
-  #     interval: 10s
-  #     retries: 20
-  #     test: curl --write-out 'HTTP %{http_code}' --fail --silent --output /dev/null http://kibana:5601/api/status || exit 1
-  #   depends_on:
-  #     elasticsearch:
-  #       condition: service_healthy
-  #   ports:
-  #     - 5601:5601
-  #   environment:
-  #     NEWSFEED_ENABLED: 'false'
-  #     TELEMETRY_OPTIN: 'false'
-  #     TELEMETRY_ENABLED: 'false'
-  #     SERVER_MAXPAYLOADBYTES: 4194304
-  #     KIBANA_AUTOCOMPLETETIMEOUT: 3000
-  #     KIBANA_AUTOCOMPLETETERMINATEAFTER: 2500000
-
   nginx:
     image: nginx
     container_name: nginx
@@ -549,73 +260,19 @@ services:
     volumes:
       - ${PWD}/nginx/nginx.conf:/etc/nginx/nginx.conf
 
-  sqlpad:
-    # To use Dockerfile at root of this project, use build instead of image
-    # build: ../../
-    image: sqlpad/sqlpad
-    container_name: sqlpad
-    ports:
-      - '3333:3000'
-    environment:
-      SQLPAD_ADMIN: admin
-      SQLPAD_ADMIN_PASSWORD: admin
-      SQLPAD_APP_LOG_LEVEL: info
-      SQLPAD_WEB_LOG_LEVEL: warn
-      SQLPAD_SEED_DATA_PATH: /etc/sqlpad/seed-data
-      SQLPAD_CONNECTIONS__pgdemo__name: Postgres demo
-      SQLPAD_CONNECTIONS__pgdemo__driver: postgres
-      SQLPAD_CONNECTIONS__pgdemo__host: postgres
-      SQLPAD_CONNECTIONS__pgdemo__database: sqlpad
-      SQLPAD_CONNECTIONS__pgdemo__username: sqlpad
-      SQLPAD_CONNECTIONS__pgdemo__password: sqlpad
-      SQLPAD_CONNECTIONS__pgdemo__multiStatementTransactionEnabled: 'true'
-      SQLPAD_CONNECTIONS__pgdemo__idleTimeoutSeconds: 86400
-    volumes:
-      - ${PWD}/sqlpad:/etc/sqlpad/seed-data
-
 volumes:
-  cortex-data:
-    driver: local
-    driver_opts:
-      type: "none"
-      o: "bind" 
-      device: "/opt/monitoring/cortex/"
-  prometheus-data:
-    driver: local
-    driver_opts:
-      type: "none"
-      o: "bind" 
-      device: "/opt/monitoring/prometheus/data/"
   grafana-data:
     driver: local
     driver_opts:
       type: "none"
       o: "bind" 
       device: "/opt/monitoring/grafana/data/"
-  tempo-data:
+  clickhouse-data:
     driver: local
     driver_opts:
       type: "none"
-      o: "bind" 
-      device: "/opt/monitoring/tempo/"
-  # sqlpad-data:
-  #   driver: local
-  #   driver_opts:
-  #     type: "none"
-  #     o: "bind" 
-  #     device: "/opt/monitoring/sqlpad/"
-  opensearch-data1:
-    driver: local
-    driver_opts:
-      type: "none"
-      o: "bind" 
-      device: "/opt/monitoring/opensearch/data1"
-  opensearch-data2:
-    driver: local
-    driver_opts:
-      type: "none"
-      o: "bind" 
-      device: "/opt/monitoring/opensearch/data2"
+      o: "bind"
+      device: "/opt/monitoring/clickhouse/"
 
 networks:
   default:
