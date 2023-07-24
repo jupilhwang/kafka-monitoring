@@ -1,61 +1,122 @@
 receivers:
+  filelog/dockercontainers:
+    include: [  "/var/lib/docker/containers/*/*.log" ]
+    start_at: end
+    include_file_path: true
+    include_file_name: false
+    operators:
+    - type: json_parser
+      id: parser-docker
+      output: extract_metadata_from_filepath
+      timestamp:
+        parse_from: attributes.time
+        layout: '%Y-%m-%dT%H:%M:%S.%LZ'
+    - type: regex_parser
+      id: extract_metadata_from_filepath
+      regex: '^.*containers/(?P<container_id>[^_]+)/.*log$'
+      parse_from: attributes["log.file.path"]
+      output: parse_body
+    - type: move
+      id: parse_body
+      from: attributes.log
+      to: body
+      output: time
+    - type: remove
+      id: time
+      field: attributes.time  
+
   otlp:
     protocols:
       grpc:
         endpoint: 0.0.0.0:4317
       http:
         endpoint: 0.0.0.0:4318
+
   jaeger:
     protocols:
       grpc:
         endpoint: 0.0.0.0:14250
       thrift_http:
         endpoint: 0.0.0.0:14268
+
   zipkin:
     endpoint: 0.0.0.0:9411
+
   fluentforward:
     endpoint: 0.0.0.0:24224
+
   prometheus:
     config:
+      global:
+        scrape_interval: 15s
       scrape_configs:
         - job_name: 'otel-collector'
-          scrape_interval: 5s
           static_configs:
-            - targets: ['exporter:8080']
+            - targets: ['localhost:8888']
+          labels:
+            - job_name: otel-collector
+
+  hostmetrics:
+    collection_interval: 30s
+    scrapers:
+      cpu: {}
+      load: {}
+      memory: {}
+      disk: {}
+      filesystem: {}
+      network: {}            
+
+  otlp/spanmetrics:
+    protocols:
+      grpc:
+        endpoint: localhost:12345
 
   kafka/telemetry:
     topic: telemetry
     encoding: otlp_proto
     brokers:
-      - 172.31.62.53:9092
+      - 10.178.0.3:9092
 
   kafka/trace:
     topic: zipkin
     encoding: zipkin_proto
     brokers:
-      - 172.31.62.53:9092
+      - 10.178.0.3:9092
     
 processors:
   batch:
-    send_batch_size: 10000
+    send_batch_size: 1000
+    sedn_batch_max_size: 1100
     timeout: 5s
-  memory_limiter:
-    check_interval: 2s
-    limit_mib: 1800
-    spike_limit_mib: 500
+
+  signozspanmetrics/prometheus:
+    metrics_exporter: prometheus
+    latency_histogram_buckets: [100us, 1ms, 2ms, 6ms, 10ms, 50ms, 100ms, 250ms, 500ms, 1000ms, 1400ms, 2000ms, 5s, 10s, 20s, 40s, 60s ]
+    dimensions_cache_size: 100000
+    dimensions:
+      - name: service.namespace
+        default: default
+      - name: deployment.environment
+        default: default
+      # This is added to ensure the uniqueness of the timeseries
+      # Otherwise, identical timeseries produced by multiple replicas of
+      # collectors result in incorrect APM metrics
+      - name: 'signoz.collector.id'    
+  # memory_limiter:
+  #   check_interval: 2s
+  #   limit_mib: 1800
+  #   spike_limit_mib: 500
+
   resourcedetection/system:
-    detectors: ['system']
+    detectors: [env, system]
     system:
       hostname_sources: ['os']
-  resource:
-    attributes:
-      - key: service.name
-        value: "serviceName"
-        action: upsert
+
   spanmetrics:
     metrics_exporter: otlp/spanmetrics
     latency_histogram_buckets: [100us, 1ms, 2ms, 6ms, 10ms, 100ms, 250ms]
     dimensions_cache_size: 1500
+
   servicegraph:
     metrics_exporter: otlp/spanmetrics
     latency_histogram_buckets: [100us, 1ms, 2ms, 6ms, 10ms, 100ms, 250ms]
@@ -63,6 +124,7 @@ processors:
     store:
       ttl: 2s
       max_items: 200
+
   metricstransform:
     transforms:
       - include: calls_total
@@ -71,9 +133,55 @@ processors:
       - include: latency
         action: update
         new_name: traces_spanmetrics_latency
+
+  logstransform/internal:
+    operators:
+      - type: trace_parser
+        if: '"trace_id" in attributes or "span_id" in attributes'
+        trace_id:
+          parse_from: attributes.trace_id
+        span_id:
+          parse_from: attributes.span_id
+        output: remove_trace_id
+      - type: trace_parser
+        if: '"traceId" in attributes or "spanId" in attributes'
+        trace_id:
+          parse_from: attributes.traceId
+        span_id:
+          parse_from: attributes.spanId
+        output: remove_traceId
+      - id: remove_traceId
+        type: remove
+        if: '"traceId" in attributes'
+        field: attributes.traceId
+        output: remove_spanId
+      - id: remove_spanId
+        type: remove
+        if: '"spanId" in attributes'
+        field: attributes.spanId
+      - id: remove_trace_id
+        type: remove
+        if: '"trace_id" in attributes'
+        field: attributes.trace_id
+        output: remove_span_id
+      - id: remove_span_id
+        type: remove
+        if: '"span_id" in attributes'
+        field: attributes.span_id
+
+
+extensions:
+  health_check:
+  pprof:
+  zpages:
+
 exporters:
-  qryn:
-    dsn: tcp://clickhouse:9000/cloki?username=default&password=*************
+  logging:
+
+  clickhouse:
+    endpoint: tcp://clickhouse:9000?username=admin&password=admin
+    username: admin
+    password: admin
     timeout: 10s
     sending_queue:
       queue_size: 100
@@ -82,37 +190,31 @@ exporters:
       initial_interval: 5s
       max_interval: 30s
       max_elapsed_time: 300s
-    logs:
-       format: json
   otlp/spanmetrics:
     endpoint: localhost:4317
     tls:
       insecure: true
 
-extensions:
-  health_check:
-  pprof:
-  zpages:
-  memory_ballast:
-    size_mib: 1000
-
 service:
+  telemetry:
+    metrics:
+      address: 0.0.0.0:8888
   extensions: [pprof, zpages, health_check]
   pipelines:
     logs:
-      receivers: [fluentforward, otlp]
+      receivers: [fluentforward, otlp, filelog/dockercontainers]
       processors: [memory_limiter, resourcedetection/system, resource, batch]
-      exporters: [qryn]
+      exporters: [clickhouse]
     traces:
       receivers: [otlp, jaeger, zipkin]
       processors: [memory_limiter, resourcedetection/system, resource, spanmetrics, servicegraph, batch]
-      exporters: [qryn]
+      exporters: [clickhouse]
     # for align with https://grafana.com/docs/tempo/latest/metrics-generator/span_metrics/#how-to-run
     metrics/spanmetrics:
       receivers: [otlp, kafka/telemetry]
       processors: [metricstransform]
-      exporters: [qryn]
+      exporters: [logging, clickhouse]
     metrics:
-      receivers: [prometheus]
+      receivers: [otlp]
       processors: [memory_limiter, resourcedetection/system, resource, batch]
-      exporters: [qryn]
+      exporters: [logging, clickhouse]

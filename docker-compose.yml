@@ -25,11 +25,12 @@ services:
 
   # otel-collector with qryn exporter
   otel-collector:
-    image: ghcr.io/metrico/qryn-otel-collector
+    image: otel/opentelemetry-collector-contrib
     container_name: otel-collector
     restart: on-failure
+    # user: root
     volumes:
-      - ${PWD}/otel-collector/otel-collector-config.yml:/etc/otel/config.yaml
+      - ${PWD}/otel-collector/otel-collector-config.yml:/etc/otel/config.yaml:ro
     ports:
       - "4317:4317"     # OTLP gRPC receiver
       - "4318:4318"     # OTLP HTTP receiver
@@ -71,15 +72,15 @@ services:
       - 9000:9000
     volumes:
       - clickhouse-data:/var/lib/clickhouse
-      - ${PWD}/clickhouse/opentelemetry_zipkin.sql:/docker-entrypoint-initdb.d/opentelemetry_zipkin.sql
+      - ${PWD}/clickhouse/opentelemetry_zipkin.sql:/docker-entrypoint-initdb.d/opentelemetry_zipkin.sql:ro
 
-  alertmanager:
-    image: prom/alertmanager
-    container_name: alertmanager
-    ports:
-      - 9093:9093
-    volumes:
-      - ${PWD}/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+  # alertmanager:
+  #   image: prom/alertmanager
+  #   container_name: alertmanager
+  #   ports:
+  #     - 9093:9093
+  #   volumes:
+  #     - ${PWD}/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
 
   grafana:
     image: grafana/grafana-oss
@@ -238,17 +239,17 @@ services:
 
         # ##################################################################
 
-  kafka-lag-exporter:
-    image: lightbend/kafka-lag-exporter:0.6.8
-    container_name: kafka-lag-exporter
-    hostname: kafka-lag-exporter
-    restart: always
-    #command: ["/opt/docker/bin/kafka-lag-exporter", "-Dconfig.file=/opt/docker/conf/application.conf", "-Dlogback.configurationFile=/opt/docker/conf/logback.xml"]
-    command: ["/opt/docker/bin/kafka-lag-exporter", "-Dconfig.file=/opt/docker/conf/application.conf"]
-    ports:
-      - "8000:8000"
-    volumes:
-      - "${PWD}/kafka-lag-exporter:/opt/docker/conf/"
+  # kafka-lag-exporter:
+  #   image: lightbend/kafka-lag-exporter:0.6.8
+  #   container_name: kafka-lag-exporter
+  #   hostname: kafka-lag-exporter
+  #   restart: always
+  #   #command: ["/opt/docker/bin/kafka-lag-exporter", "-Dconfig.file=/opt/docker/conf/application.conf", "-Dlogback.configurationFile=/opt/docker/conf/logback.xml"]
+  #   command: ["/opt/docker/bin/kafka-lag-exporter", "-Dconfig.file=/opt/docker/conf/application.conf"]
+  #   ports:
+  #     - "8000:8000"
+  #   volumes:
+  #     - "${PWD}/kafka-lag-exporter:/opt/docker/conf/"
 
   nginx:
     image: nginx
