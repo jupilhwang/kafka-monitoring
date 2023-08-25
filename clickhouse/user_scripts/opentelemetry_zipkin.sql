@@ -1,0 +1,118 @@
+-- SET opentelemetry_start_trace_probability = 1.0;
+-- SELECT 1;
+-- system flush logs;
+
+-- DROP TABLE IF EXISTS default.zipkin_spans;
+-- CREATE MATERIALIZED VIEW default.zipkin_spans
+-- ENGINE = URL('http://qryn:3100/tempo/api/push', 'JSONEachRow')
+-- SETTINGS output_format_json_named_tuples_as_objects = 1,
+--     output_format_json_array_of_rows = 1 AS
+-- SELECT
+--     lower(hex(reinterpretAsFixedString(trace_id))) AS traceId,
+--     lower(hex(parent_span_id)) AS parentId,
+--     lower(hex(span_id)) AS id,
+--     operation_name AS name,
+--     start_time_us AS timestamp,
+--     finish_time_us - start_time_us AS duration,
+--     cast(tuple('clickhouse'), 'Tuple(serviceName text)') AS localEndpoint,
+--     cast(tuple(
+--         attribute.values[indexOf(attribute.names, 'db.statement')]),
+--         'Tuple("db.statement" text)') AS tags
+-- FROM system.opentelemetry_span_log;
+
+-- # DROP TABLE IF EXISTS default.influx_log_send;
+-- # CREATE MATERIALIZED VIEW default.influx_log_send
+-- # ENGINE = URL('http://qryn:3100/influx/api/v2/write', 'LineAsString')
+-- # AS SELECT format('syslog,level={0},logger_name={1},type=clickhouse message="{2}" {3}', 
+-- #  toString(level), 
+-- #  replaceRegexpAll(toString(logger_name), '[^a-zA-Z0-9_]', '_'), 
+-- #  replaceAll(replaceRegexpAll(message, '["\\\\]', '\x00\\0'), '\x00', '\\'), 
+-- #  toString(toUnixTimestamp64Nano(event_time_microseconds))) FROM system.text_log;
+
+
+-- DROP TABLE IF EXISTS CREATE TABLE default.otel_logs
+-- (
+--     Timestamp DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+--     TraceId String CODEC(ZSTD(1)),
+--     SpanId String CODEC(ZSTD(1)),
+--     TraceFlags UInt32 CODEC(ZSTD(1)),
+--     SeverityText LowCardinality(String) CODEC(ZSTD(1)),
+--     SeverityNumber Int32 CODEC(ZSTD(1)),
+--     ServiceName LowCardinality(String) CODEC(ZSTD(1)),
+--     Body String CODEC(ZSTD(1)),
+--     ResourceAttributes Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+--     LogAttributes Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+--     INDEX idx_trace_id TraceId TYPE bloom_filter(0.001) GRANULARITY 1,
+--     INDEX idx_res_attr_key mapKeys(ResourceAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+--     INDEX idx_res_attr_value mapValues(ResourceAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+--     INDEX idx_log_attr_key mapKeys(LogAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+--     INDEX idx_log_attr_value mapValues(LogAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+--     INDEX idx_body Body TYPE tokenbf_v1(32768, 3, 0) GRANULARITY 1
+-- )
+-- ENGINE = MergeTree
+-- PARTITION BY toDate(Timestamp)
+-- ORDER BY (ServiceName, SeverityText, toUnixTimestamp(Timestamp), TraceId)
+-- SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
+
+-- DROP TABLE IF EXISTS CREATE TABLE default.otel_traces
+-- (
+-- 	Timestamp DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+-- 	TraceId String CODEC(ZSTD(1)),
+-- 	SpanId String CODEC(ZSTD(1)),
+-- 	ParentSpanId String CODEC(ZSTD(1)),
+-- 	TraceState String CODEC(ZSTD(1)),
+-- 	SpanName LowCardinality(String) CODEC(ZSTD(1)),
+-- 	SpanKind LowCardinality(String) CODEC(ZSTD(1)),
+-- 	ServiceName LowCardinality(String) CODEC(ZSTD(1)),
+-- 	ResourceAttributes Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+-- 	SpanAttributes Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+-- 	Duration Int64 CODEC(ZSTD(1)),
+-- 	StatusCode LowCardinality(String) CODEC(ZSTD(1)),
+-- 	StatusMessage String CODEC(ZSTD(1)),
+-- 	Events.Timestamp Array(DateTime64(9)) CODEC(ZSTD(1)),
+-- 	Events.Name Array(LowCardinality(String)) CODEC(ZSTD(1)),
+-- 	Events.Attributes Array(Map(LowCardinality(String), String)) CODEC(ZSTD(1)),
+-- 	Links.TraceId Array(String) CODEC(ZSTD(1)),
+-- 	Links.SpanId Array(String) CODEC(ZSTD(1)),
+-- 	Links.TraceState Array(String) CODEC(ZSTD(1)),
+-- 	Links.Attributes Array(Map(LowCardinality(String), String)) CODEC(ZSTD(1)),
+-- 	INDEX idx_trace_id TraceId TYPE bloom_filter(0.001) GRANULARITY 1,
+-- 	INDEX idx_res_attr_key mapKeys(ResourceAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+-- 	INDEX idx_res_attr_value mapValues(ResourceAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+-- 	INDEX idx_span_attr_key mapKeys(SpanAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+-- 	INDEX idx_span_attr_value mapValues(SpanAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+-- 	INDEX idx_duration Duration TYPE minmax GRANULARITY 1
+-- )
+-- ENGINE = MergeTree
+-- PARTITION BY toDate(Timestamp)
+-- ORDER BY (ServiceName, SpanName, toUnixTimestamp(Timestamp), TraceId)
+-- TTL toDateTime(Timestamp) + toIntervalDay(3)
+-- SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
+
+-- ALTER TABLE otel_traces ADD COLUMN HostName String MATERIALIZED ResourceAttributes['host.name'];
+-- ALTER TABLE otel_traces MATERIALIZE COLUMN HostName;
+
+-- -- DROP TABLE IF EXISTS CREATE MATERIALIZED VIEW otel_traces_trace_id_ts_mv TO otel_traces_trace_id_ts
+-- -- (
+-- -- 	TraceId String,
+-- -- 	Start DateTime64(9),
+-- -- 	End DateTime64(9)
+-- -- ) AS
+-- -- SELECT
+-- -- 	TraceId,
+-- -- 	min(Timestamp) AS Start,
+-- -- 	max(Timestamp) AS End
+-- -- FROM otel_traces
+-- -- WHERE TraceId != ''
+-- -- GROUP BY TraceId
+
+-- DROP TABLE IF EXISTS CREATE TABLE otel_traces_trace_id_ts
+-- (
+-- 	TraceId String CODEC(ZSTD(1)),
+-- 	Start DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+-- 	End DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+-- 	INDEX idx_trace_id TraceId TYPE bloom_filter(0.01) GRANULARITY 1
+-- )
+-- ENGINE = MergeTree
+-- ORDER BY (TraceId, toUnixTimestamp(Start))
+-- TTL toDateTime(Start) + toIntervalDay(3)

@@ -1,36 +1,14 @@
 version: '3'
 services:
-  # OpenTelemetry Collector
-  # otelcol:
-  #   image: otel/opentelemetry-collector-contrib
-  #   container_name: otel-col
-  #   network_mode: host
-  #   deploy:
-  #     resources:
-  #       limits:
-  #         memory: 125M
-  #   restart: unless-stopped
-  #   command: 
-  #     - --config=/etc/otelcol-config.yml
-  #     - --config=/etc/otelcol-observability.yml
-  #     - --config=/etc/otelcol-config-extras.yml
-  #   ports:
-  #     - "4317"          # OTLP over gRPC receiver
-  #     - "4318:4318"     # OTLP over HTTP receiver
-  #     # - "9464"          # Prometheus exporter
-  #   volumes:
-  #     - ${PWD}/otel-col/otelcol-config.yml:/etc/otelcol-config.yml
-  #     - ${PWD}/otel-col/otelcol-observability.yml:/etc/otelcol-observability.yml
-  #     - ${PWD}/otel-col/otelcol-config-extras.yml:/etc/otelcol-config-extras.yml
-
   # otel-collector with qryn exporter
   otel-collector:
-    image: otel/opentelemetry-collector-contrib
+    image: ghcr.io/metrico/qryn-otel-collector:latest
     container_name: otel-collector
     restart: on-failure
-    # user: root
+    command: ["--config=/etc/otel-collector-config.yml", "${OTELCOL_ARGS}"]
     volumes:
-      - ${PWD}/otel-collector/otel-collector-config.yml:/etc/otel/config.yaml:ro
+      - ${PWD}/otel-collector/otel-collector-config.yml:/etc/otel-collector-config.yml:ro
+      - /home/ubuntu/works/cp-docker/kafka/logs:/var/log/kafka/:ro
     ports:
       - "4317:4317"     # OTLP gRPC receiver
       - "4318:4318"     # OTLP HTTP receiver
@@ -38,6 +16,9 @@ services:
       - "14268:14268"   # Jaeger thrift HTTP
       - "9411:9411"     # Zipkin port
       - "24224:24224"   # Fluent Forward
+      # - "55679:55679"   # zpages extension
+      # - "1888:1888"     # pprof extension
+      # - "13133:13133"   # health_check extension
 
   qryn:
     image: qxip/qryn:latest
@@ -72,7 +53,24 @@ services:
       - 9000:9000
     volumes:
       - clickhouse-data:/var/lib/clickhouse
-      - ${PWD}/clickhouse/opentelemetry_zipkin.sql:/docker-entrypoint-initdb.d/opentelemetry_zipkin.sql:ro
+      # - ${PWD}/clickhouse/opentelemetry_zipkin.sql:/docker-entrypoint-initdb.d/opentelemetry_zipkin.sql:ro
+
+      - ${PWD}/clickhouse/clickhouse-config.xml:/etc/clickhouse-server/config.xml
+      - ${PWD}/clickhouse/clickhouse-users.xml:/etc/clickhouse-server/users.xml
+      # - ${PWD}/clickhouse/custom-function.xml:/etc/clickhouse-server/custom-function.xml
+      # - ${PWD}/clickhouse/clickhouse-cluster.xml:/etc/clickhouse-server/config.d/cluster.xml
+      # - ./clickhouse-storage.xml:/etc/clickhouse-server/config.d/storage.xml
+      - ${PWD}/clickhouse/user_scripts:/var/lib/clickhouse/user_scripts/
+
+  ## clickchouse web ui (tabix)
+  # clickhouse-tabix:
+  #   image: spoonest/clickhouse-tabix-web-client
+  #   container_name: tabix
+  #   restart: always
+  #   ports:
+  #       - "8124:80"
+  #   depends_on:
+  #       - clickhouse
 
   # alertmanager:
   #   image: prom/alertmanager
