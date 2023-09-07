@@ -26,6 +26,7 @@ whitelistObjectNames:
   - "kafka.consumer:*"
   - "kafka.producer:*"
   - "kafka.secret.registry:*"
+  - "debezium*"
 blacklistObjectNames:
   # This will ignore the admin client metrics from KSQL server and will blacklist certain metrics
   # that do not make sense for ingestion.
