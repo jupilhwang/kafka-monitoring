@@ -1,8 +1,8 @@
 # my global config
 global:
-  scrape_interval: 15s # Set the scrape interval to every 15 seconds. Default is every 1 minute.
-  evaluation_interval: 15s # Evaluate rules every 15 seconds. The default is every 1 minute.
-  scrape_timeout: 10s # scrape_timeout is set to the global default (10s).
+  scrape_interval: 30s # Set the scrape interval to every 15 seconds. Default is every 1 minute.
+  evaluation_interval: 30s # Evaluate rules every 15 seconds. The default is every 1 minute.
+  scrape_timeout: 5s # scrape_timeout is set to the global default (10s).
 
 # Alertmanager configuration
 # alerting:
@@ -47,6 +47,27 @@ scrape_configs:
   - job_name: kafka-connect
     static_configs:
       - targets:
-          - 172.31.62.53:8077
+          - 172.31.54.185:8077
         labels:
           env: "dev"
+          cluster: "kafka-connect"
+
+  - job_name: Confluent Cloud
+    scrape_interval: 1m
+    scrape_timeout: 1m
+    honor_timestamps: true
+    static_configs:
+      - targets:
+        - api.telemetry.confluent.cloud
+    scheme: https
+    basic_auth:
+      username: T67T7MIV2DYAABKQ
+      password: 1poDmSYLFXKtVnXk4VBDd8qHsnc7iwikKH3lUn3bkdlbwV326tk5s+d6baLvtleK
+    metrics_path: /v2/metrics/cloud/export
+    params:
+      "resource.kafka.id":
+        - lkc-v1md00
+      "resource.schema_registry.id":
+        - lsrc-631od3
+
+
